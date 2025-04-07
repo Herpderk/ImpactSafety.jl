@@ -1,6 +1,5 @@
 # ImpactSafety.jl
-### To get the hybrid trajectory optimization solver, run:
 
-```
-git submodule update --init --recursive
-```
+### Install HybridRobotDynamics.jl from [here](https://github.com/Herpderk/HybridRobotDynamics.jl).
+
+### Install HybridTrajIpopt.jl from [here](https://github.com/Herpderk/HybridTrajIpopt.jl).

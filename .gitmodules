@@ -1,3 +1,0 @@
-[submodule "HybridTrajIpopt.jl"]
-	path = external/HybridTrajIpopt.jl
-	url = git@github.com:Herpderk/HybridTrajIpopt.jl.git
