@@ -2,7 +2,7 @@ module ImpactSafety
 
 using LinearAlgebra
 using OSQP
-using MuJoCo
 using Plots
+using HybridRobotDynamics
 
 end # module ImpactSafety
