@@ -28,7 +28,7 @@ function SafetyFilter(
 
     # Set up model arrays
     model = OSQP.Model()
-    P = Matrix{Float64}(I(nu))
+    P = Matrix{Float64}(2*I(nu))
     A = zeros(nΦ, nu)
     q = zeros(nu)
     l = zeros(nu)
