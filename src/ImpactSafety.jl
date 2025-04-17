@@ -3,12 +3,16 @@ module ImpactSafety
 using LinearAlgebra
 using SparseArrays
 using ForwardDiff
-using OSQP
+using Convex
+using Clarabel
 using Plots
 
-using HybridRobotDynamics: ControlAffineFlow
+using HybridRobotDynamics:
+        ControlAffineFlow,
+        ManipulatorEquation,
+        manipulator_inverses
 
-include("filter.jl")
 include("impact.jl")
+include("filter.jl")
 
 end # module ImpactSafety
