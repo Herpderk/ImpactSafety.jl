@@ -12,6 +12,9 @@ using HybridRobotDynamics:
         ManipulatorEquation,
         manipulator_inverses
 
+export
+        SafetyFilter
+
 include("impact.jl")
 include("filter.jl")
 
