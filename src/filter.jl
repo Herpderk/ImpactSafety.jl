@@ -2,7 +2,6 @@
 """
 mutable struct SafetyFilter
     nu::Int
-    nΦ::Int
     ϵ::Real
     Φ::Function
     Φ̇ub::Function
@@ -11,25 +10,15 @@ mutable struct SafetyFilter
     #settings::NamedTuple
 end
 
-function SafetyFilter(
-    nx::Int,
+#= function SafetyFilter(
     nu::Int,
-    no::Int,
     ϵ::Real,
     Φ::Function,
     Φ̇ub::Function,
     flow::ControlAffineFlow
 )::SafetyFilter
-    # Assert safety index dimensions
-    xtest = zeros(nx)
-    otest = zeros(no)
-    Φtest = Φ(otest, xtest)
-    Φ̇test = Φ̇ub(otest, xtest)
-    @assert size(Φtest) == size(Φ̇test)
-
     # Get safety index dimension
-    nΦ = length(Φtest)
-    return SafetyFilter(nu, nΦ, ϵ, Φ, Φ̇ub, flow)
+    return SafetyFilter(nu, ϵ, Φ, Φ̇ub, flow)
 
     #model = OSQP.Model()
     #P = Matrix{<:Real}(2*I(nu))
@@ -38,7 +27,7 @@ function SafetyFilter(
     #l = zeros(nu)
     #OSQP.setup!(model; P=P, A=A, q=q, l=l, u=l, settings...)
     #return SafetyFilter(nΦ, Φ, Φ̇ub, flow, model, settings)
-end
+end =#
 
 
     ## Compute safe control set bounds
@@ -58,24 +47,25 @@ end
 """
 """
 function (filter::SafetyFilter)(
-    o::Vector{<:Real},
+    Φargs::Tuple,
+    Φ̇args::Tuple,
     x::Vector{<:Real},
     u::Vector{<:Real};
     verbose::Bool = false
 )::Vector{<:Real}
-    # Quadratic problem
+    # Quadratic program
     uvar = Variable(filter.nu)
     prob = minimize(square(uvar - u))
 
     # Compute safe control set bounds
-    Φ̇ub = filter.Φ̇ub(o, x)
-    δΦ = ForwardDiff.jacobian(δx -> filter.Φ(o, δx), x)
+    Φ̇ub = filter.Φ̇ub(Φ̇args..., x)
+    δΦ = ForwardDiff.jacobian(δx -> filter.Φ(Φargs..., δx), x)
     f = filter.flow.actuated(x)
     g = filter.flow.unactuated(x)
     prob.constraints = [δΦ*(f + g*uvar) <= Φ̇ub .+ filter.ϵ]
 
     # Solve QP/SOCP
-    solve!(prob, Clarabel.Optimizer; silent_solver = !verbose)
+    solve!(prob, Clarabel.Optimizer; silent = !verbose)
     result = evaluate(uvar)
     if typeof(result) <: Real
         return [result]
