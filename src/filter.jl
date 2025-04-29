@@ -6,70 +6,123 @@ mutable struct SafetyFilter
     Φ::Function
     Φ̇ub::Function
     flow::ControlAffineFlow
-    #model::OSQP.Model
+    uvar::Vector{VariableRef}
+    model::Model
     #settings::NamedTuple
 end
 
-#= function SafetyFilter(
+function SafetyFilter(
     nu::Int,
     ϵ::Real,
     Φ::Function,
     Φ̇ub::Function,
     flow::ControlAffineFlow
 )::SafetyFilter
-    # Get safety index dimension
-    return SafetyFilter(nu, ϵ, Φ, Φ̇ub, flow)
-
-    #model = OSQP.Model()
-    #P = Matrix{<:Real}(2*I(nu))
-    #A = zeros(nΦ, nu)
-    #q = zeros(nu)
-    #l = zeros(nu)
-    #OSQP.setup!(model; P=P, A=A, q=q, l=l, u=l, settings...)
-    #return SafetyFilter(nΦ, Φ, Φ̇ub, flow, model, settings)
-end =#
-
-
-    ## Compute safe control set bounds
-    #δΦ = ForwardDiff.jacobian(filter.Φ, x)
-    #A = δΦ*filter.flow.actuated(x)
-    #q = -2*u
-    #lb = -Inf*ones(filter.nΦ)
-    #ub = filter.Φ̇ub(x) - δΦ*filter.flow.unactuated(x)
-
-    ## Solve QP
-    #OSQP.update!(filter.model, Ax=A; q=q, l=lb, u=ub)
-    #OSQP.update_settings!(filter.model; filter.settings)
-    #results = OSQP.solve!(filter.model)
-    #return results.x
-
+    model = Model(Clarabel.Optimizer)
+    @variable(model, uvar[1:nu])
+    return SafetyFilter(nu, ϵ, Φ, Φ̇ub, flow, uvar, model)
+end
 
 """
 """
-function (filter::SafetyFilter)(
+function (filt::SafetyFilter)(
     Φargs::Tuple,
     Φ̇args::Tuple,
     x::Vector{<:Real},
-    u::Vector{<:Real};
+    uref::Vector{<:Real};
     verbose::Bool = false
 )::Vector{<:Real}
-    # Quadratic program
-    uvar = Variable(filter.nu)
-    prob = minimize(square(uvar - u))
-
-    # Compute safe control set bounds
-    Φ̇ub = filter.Φ̇ub(Φ̇args..., x)
-    δΦ = ForwardDiff.jacobian(δx -> filter.Φ(Φargs..., δx), x)
-    f = filter.flow.actuated(x)
-    g = filter.flow.unactuated(x)
-    prob.constraints = [δΦ*(f + g*uvar) <= Φ̇ub .+ filter.ϵ]
-
-    # Solve QP/SOCP
-    solve!(prob, Clarabel.Optimizer; silent = !verbose)
-    result = evaluate(uvar)
-    if typeof(result) <: Real
-        return [result]
-    else
-        return result
+    # Activate filter if safety constraint is violated
+    #=use_filter = false
+    Φ = filt.Φ(Φargs..., x)
+    for val in Φ
+        if val > 0
+            use_filter = true
+            break
+        end
     end
+    use_filter = true
+
+    if !use_filter
+        return uref
+    else=#
+    # Compute safe control set bounds
+    Φ̇ub = filt.Φ̇ub(Φ̇args..., x)
+    δΦ = ForwardDiff.jacobian(δx -> filt.Φ(Φargs..., δx), x)
+    f = reshape(filt.flow.unactuated(x), length(x))
+    g = reshape(filt.flow.actuated(x), length(x), filt.nu)
+    cexpr = δΦ*(f + g*filt.uvar)
+
+    # Set objective
+    obj = filt.uvar'*filt.uvar - 2*uref'*filt.uvar + uref'*uref
+    @objective(filt.model, Min, obj)
+
+    # Set constraints
+    for (i, ub) in enumerate(Φ̇ub)
+        if !isinf(ub)
+            @constraint(filt.model, cexpr[i] <= ub + filt.ϵ)
+        end
+    end
+
+    # Set solver options
+    if verbose
+        set_optimizer_attribute(filt.model, "verbose", true)
+    else
+        set_optimizer_attribute(filt.model, "verbose", false)
+    end
+
+    # Solve
+    optimize!(filt.model)
+    u = value.(filt.uvar)
+
+    # Clear constraints
+    for c in all_constraints(filt.model; include_variable_in_set_constraints = false)
+        delete(filt.model, c)
+    end
+
+    # Return solution as a vector
+    if typeof(u) <: Real
+        return [u]
+    else
+        return u
+    end
+end
+
+
+"""
+"""
+mutable struct ImpactAwareSafetyFilter
+    q::Real
+    ρ::Real
+    Δt::Real
+    pidx::UnitRange{Int}
+    vidx::UnitRange{Int}
+    guard::Function
+    reset::Function
+    decoupled_Φ::Function
+    nominal::SafetyFilter
+end
+
+"""
+"""
+function(filt::ImpactAwareSafetyFilter)(
+    Φargs::Tuple,
+    Φ̇args::Tuple,
+    x::Vector{<:Real},
+    uref::Vector{<:Real};
+    verbose::Bool = false
+)::Vector{<:Real}
+    if x[filt.vidx][end] < 0
+        f = reshape(filt.nominal.flow.unactuated(x), length(x))
+        g = reshape(filt.nominal.flow.actuated(x), length(x), filt.nominal.nu)
+        x1 = x + filt.Δt*(f + g*filt.nominal.uvar)
+
+        #vJ = min(1.0, exp(-filt.q*filt.guard(x))) * filt.reset(x1)[filt.vidx]
+        vJ = filt.reset(x1)[filt.vidx]
+        pJ = x[filt.pidx]
+        Φ = filt.decoupled_Φ(Φargs..., pJ, vJ)
+        #@show Φ
+        @constraint(filt.nominal.model, Φ .+ filt.ρ .<= 0.0)
+    end
+    return filt.nominal(Φargs, Φ̇args, x, uref; verbose)
 end

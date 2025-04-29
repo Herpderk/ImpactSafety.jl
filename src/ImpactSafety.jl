@@ -3,8 +3,9 @@ module ImpactSafety
 using LinearAlgebra
 using SparseArrays
 using ForwardDiff
-using Convex
+using JuMP
 using Clarabel
+using OSQP
 using Plots
 
 using HybridRobotDynamics:
@@ -13,7 +14,8 @@ using HybridRobotDynamics:
         manipulator_inverses
 
 export
-        SafetyFilter
+        SafetyFilter,
+        ImpactAwareSafetyFilter
 
 include("impact.jl")
 include("filter.jl")
