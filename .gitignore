@@ -23,6 +23,8 @@ docs/site/
 # environment.
 Manifest.toml
 
-
 # VSCode
 .vscode
+
+# MuJoCo
+MUJOCO_LOG*
