@@ -3,10 +3,11 @@ module ImpactSafety
 using LinearAlgebra
 using SparseArrays
 using ForwardDiff
-using JuMP
+import JuMP
 using Clarabel
 using OSQP
 using Plots
+import MuJoCo
 
 using HybridRobotDynamics:
         ControlAffineFlow,
@@ -15,9 +16,13 @@ using HybridRobotDynamics:
 
 export
         SafetyFilter,
-        ImpactAwareSafetyFilter
+        ImpactAwareSafetyFilter,
+        mjSafetyFilter,
+        mjVelocityExplicitFilter,
+        taskspace_Jdot
 
 include("impact.jl")
 include("filter.jl")
+include("finitediff.jl")
 
 end # module ImpactSafety
