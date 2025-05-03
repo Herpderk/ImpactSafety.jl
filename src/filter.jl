@@ -160,7 +160,7 @@ function (filt::mjSafetyFilter)(
     Φ̇args::Tuple,
     model::MuJoCo.Model,
     data::MuJoCo.Data,
-    bodyidx::Int,
+    bodyidx::Int;
     verbose::Bool = false
 )::Nothing
     # Compute safe control set bounds
@@ -208,7 +208,6 @@ end
 """
 mutable struct mjVelocityExplicitFilter
     ρ::Real
-    δt::Real
     decoupled_Φ::Function
     nominal::mjSafetyFilter
 end
@@ -220,24 +219,26 @@ function(filt::mjVelocityExplicitFilter)(
     Φ̇args::Tuple,
     model::MuJoCo.Model,
     data::MuJoCo.Data,
-    bodyidx::Int,
+    bodyidx::Int;
+    ecoeff::Real = 0.1,
     verbose::Bool = false
-)::Vector{<:Real}
-    # Task state jacobian w.r.t. joint position
-    Jtask = MuJoCo.mj_zeros(3, model.nv)
-    mj_jacBodyCom(model, data, Jtask, nothing, bodyidx)
+)::Nothing
+    if data.cvel[bodyidx, 3] < 0
+        # Task state jacobian w.r.t. joint position
+        Jtask = MuJoCo.mj_zeros(3, model.nv)
+        MuJoCo.mj_jacBodyCom(model, data, Jtask, nothing, bodyidx)
 
-    # Get velocity integration law
-    fv = data.qacc - data.qfrc_actuator
-    gv = data.actuator_moment'
-    v1 = v0 + filt.δt*(fv + gv*filt.nominal.uvar)
+        # Get velocity integration law
+        fv = data.qacc - data.qfrc_actuator
+        gv = data.actuator_moment'
+        v1 = data.qvel + model.opt.timestep*(fv + gv*filt.nominal.uvar)
 
-    # Get task space velocity and position
-    vtask = Jtask * v1
-    ptask = data.xipos[bodyidx, :]
+        # Get task space velocity and position
+        vtask = -ecoeff *  Jtask * v1
+        ptask = data.xipos[bodyidx, :]
 
-    Φ = filt.decoupled_Φ(Φargs..., ptask, vtask)
-    #@show Φ
-    JuMP.@constraint(filt.nominal.model, Φ .+ filt.ρ .<= 0.0)
-    return filt.nominal(Φargs, Φ̇args, x, uref; verbose)
+        Φ = filt.decoupled_Φ(Φargs..., ptask, vtask)
+        JuMP.@constraint(filt.nominal.optmodel, Φ .+ filt.ρ .<= 0.0)
+    end
+    return filt.nominal(Φargs, Φ̇args, model, data, bodyidx; verbose)
 end
